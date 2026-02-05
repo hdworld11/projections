@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useStore } from '../store/useStore';
 import { useReadOnly } from '../contexts/ReadOnlyContext';
+import { computeProjections, computeBlended } from '../lib/projections';
 import type { Opportunity, OpportunityMode } from '../types';
 
 function OpportunityForm({
@@ -229,6 +230,12 @@ function formFromOpp(opp: Opportunity) {
   };
 }
 
+interface OpportunityImpact {
+  cohortImpacts: { cohortId: string; cohortName: string; color: string; delta: number; deltaPaid: number }[];
+  netDelta: number;
+  netDeltaPaid: number;
+}
+
 export default function OpportunityPanel() {
   const opportunities = useStore((s) => s.opportunities);
   const stages = useStore((s) => s.stages);
@@ -242,6 +249,48 @@ export default function OpportunityPanel() {
 
   const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+
+  // Compute per-opportunity impacts
+  const opportunityImpacts = useMemo(() => {
+    const impacts = new Map<string, OpportunityImpact>();
+
+    if (stages.length === 0 || cohorts.length === 0) return impacts;
+
+    // Baseline (no opportunities)
+    const baselineResults = computeProjections(stages, edges, cohorts, []);
+    const baselineBlended = computeBlended(baselineResults, cohorts);
+
+    for (const opp of opportunities) {
+      // Compute with just this opportunity enabled
+      const singleOppResults = computeProjections(stages, edges, cohorts, [{ ...opp, enabled: true }]);
+      const singleOppBlended = computeBlended(singleOppResults, cohorts);
+
+      // Per-cohort impacts
+      const cohortImpacts = cohorts.map((cohort) => {
+        const baseResult = baselineResults.find((r) => r.cohortId === cohort.id);
+        const oppResult = singleOppResults.find((r) => r.cohortId === cohort.id);
+
+        const delta = (oppResult?.projectedConversion ?? 0) - (baseResult?.baselineConversion ?? 0);
+        const deltaPaid = (oppResult?.projectedPaid ?? 0) - (baseResult?.baselinePaid ?? 0);
+
+        return {
+          cohortId: cohort.id,
+          cohortName: cohort.name,
+          color: cohort.color,
+          delta,
+          deltaPaid,
+        };
+      }).filter((impact) => Math.abs(impact.delta) > 0.0001); // Only show affected cohorts
+
+      // Net impact on blended conversion
+      const netDelta = singleOppBlended.projectedConversion - baselineBlended.baselineConversion;
+      const netDeltaPaid = singleOppBlended.totalProjPaid - baselineBlended.totalBasePaid;
+
+      impacts.set(opp.id, { cohortImpacts, netDelta, netDeltaPaid });
+    }
+
+    return impacts;
+  }, [stages, edges, cohorts, opportunities]);
 
   const stageName = (id: string) => stages.find((s) => s.id === id)?.name ?? '?';
   const edgeLabel = (edgeId: string) => {
@@ -279,6 +328,16 @@ export default function OpportunityPanel() {
     setEditingId(null);
   };
 
+  const formatDelta = (delta: number) => {
+    const pct = (delta * 100).toFixed(2);
+    return delta >= 0 ? `+${pct}%` : `${pct}%`;
+  };
+
+  const formatDeltaPaid = (delta: number) => {
+    const rounded = Math.round(delta);
+    return rounded >= 0 ? `+${rounded.toLocaleString()}` : rounded.toLocaleString();
+  };
+
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
@@ -314,8 +373,10 @@ export default function OpportunityPanel() {
       )}
 
       <div className="space-y-2">
-        {opportunities.map((opp) =>
-          editingId === opp.id && !isReadOnly ? (
+        {opportunities.map((opp) => {
+          const impact = opportunityImpacts.get(opp.id);
+
+          return editingId === opp.id && !isReadOnly ? (
             <OpportunityForm
               key={opp.id}
               initial={formFromOpp(opp)}
@@ -370,6 +431,7 @@ export default function OpportunityPanel() {
                   </div>
                 )}
               </div>
+
               <div className="flex gap-3 mt-1.5 text-[10px] text-slate-500">
                 {opp.mode === 'rate' ? (
                   <span>New rate: {(opp.targetRate * 100).toFixed(1)}%</span>
@@ -383,8 +445,10 @@ export default function OpportunityPanel() {
                   </span>
                 )}
               </div>
+
+              {/* Cohort tags */}
               {opp.cohortIds.length > 0 && (
-                <div className="flex gap-1 mt-1">
+                <div className="flex gap-1 mt-1.5">
                   {opp.cohortIds.map((cid) => {
                     const c = cohorts.find((co) => co.id === cid);
                     return c ? (
@@ -399,9 +463,42 @@ export default function OpportunityPanel() {
                   })}
                 </div>
               )}
+
+              {/* Impact metrics */}
+              {impact && (impact.cohortImpacts.length > 0 || Math.abs(impact.netDelta) > 0.0001) && (
+                <div className="mt-2 pt-2 border-t border-slate-200/50">
+                  {/* Per-cohort impact */}
+                  {impact.cohortImpacts.length > 0 && (
+                    <div className="space-y-0.5">
+                      {impact.cohortImpacts.map((ci) => (
+                        <div key={ci.cohortId} className="flex items-center justify-between text-[10px]">
+                          <div className="flex items-center gap-1">
+                            <span
+                              className="w-2 h-2 rounded-full"
+                              style={{ backgroundColor: ci.color }}
+                            />
+                            <span className="text-slate-500">{ci.cohortName}</span>
+                          </div>
+                          <span className={ci.delta >= 0 ? 'text-emerald-600 font-medium' : 'text-red-600 font-medium'}>
+                            {formatDelta(ci.delta)} ({formatDeltaPaid(ci.deltaPaid)})
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Net/blended impact */}
+                  <div className="flex items-center justify-between text-[10px] mt-1.5 pt-1.5 border-t border-dashed border-slate-200/50">
+                    <span className="text-slate-600 font-medium">Net Impact</span>
+                    <span className={`font-semibold ${impact.netDelta >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
+                      {formatDelta(impact.netDelta)} ({formatDeltaPaid(impact.netDeltaPaid)} customers)
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
-          ),
-        )}
+          );
+        })}
 
         {opportunities.length === 0 && !adding && (
           <p className="text-xs text-slate-400 italic">No opportunities yet</p>

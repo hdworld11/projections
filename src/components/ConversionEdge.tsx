@@ -6,6 +6,7 @@ import {
   type EdgeProps,
 } from '@xyflow/react';
 import { useStore } from '../store/useStore';
+import { useReadOnly } from '../contexts/ReadOnlyContext';
 
 function RateInput({
   cohortId,
@@ -13,12 +14,14 @@ function RateInput({
   rate,
   color,
   name,
+  isReadOnly,
 }: {
   cohortId: string;
   edgeId: string;
   rate: number;
   color: string;
   name: string;
+  isReadOnly: boolean;
 }) {
   const setConversionRate = useStore((s) => s.setConversionRate);
   const [localValue, setLocalValue] = useState<string>((rate * 100).toString());
@@ -36,6 +39,21 @@ function RateInput({
       setLocalValue((rate * 100).toString());
     }
   };
+
+  if (isReadOnly) {
+    return (
+      <div className="flex items-center gap-1">
+        <span
+          className="w-2 h-2 rounded-full shrink-0"
+          style={{ backgroundColor: color }}
+          title={name}
+        />
+        <span className="text-[10px] font-mono text-slate-700">
+          {(rate * 100).toFixed(1)}%
+        </span>
+      </div>
+    );
+  }
 
   return (
     <div className="flex items-center gap-1">
@@ -93,6 +111,7 @@ export default function ConversionEdge({
   const cohorts = useStore((s) => s.cohorts);
   const selectedCohortId = useStore((s) => s.selectedCohortId);
   const removeEdge = useStore((s) => s.removeEdge);
+  const { isReadOnly } = useReadOnly();
 
   const displayCohorts = selectedCohortId
     ? cohorts.filter((c) => c.id === selectedCohortId)
@@ -120,6 +139,7 @@ export default function ConversionEdge({
                   rate={c.conversionRates[edgeId] ?? 0}
                   color={c.color}
                   name={c.name}
+                  isReadOnly={isReadOnly}
                 />
               ))}
             </div>
@@ -128,7 +148,7 @@ export default function ConversionEdge({
               {cohorts.length === 0 ? 'Add a cohort' : 'No rate'}
             </span>
           )}
-          {edgeId && (
+          {edgeId && !isReadOnly && (
             <button
               onClick={() => removeEdge(edgeId)}
               className="block mt-1 text-[10px] text-red-500 hover:text-red-700 mx-auto"

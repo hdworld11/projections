@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { v4 as uuid } from 'uuid';
 import type { Stage, StageEdge, Cohort, Opportunity } from '../types';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
 interface AppState {
   stages: Stage[];
@@ -10,6 +11,7 @@ interface AppState {
   opportunities: Opportunity[];
   selectedCohortId: string | null;
   activeTab: 'funnel' | 'impact';
+  currentProjectId: string | null;
 
   // Stage actions
   addStage: (name: string, isTerminal?: boolean) => Stage;
@@ -37,6 +39,17 @@ interface AppState {
   // UI actions
   setSelectedCohortId: (id: string | null) => void;
   setActiveTab: (tab: 'funnel' | 'impact') => void;
+
+  // Supabase sync actions
+  setCurrentProjectId: (id: string | null) => void;
+  loadFromSupabase: (projectId: string) => Promise<void>;
+  saveToSupabase: (projectId: string) => Promise<void>;
+  loadSharedData: (data: {
+    stages: Stage[];
+    edges: StageEdge[];
+    cohorts: Cohort[];
+    opportunities: Opportunity[];
+  }) => void;
 }
 
 const COHORT_COLORS = [
@@ -53,6 +66,7 @@ export const useStore = create<AppState>()(
       opportunities: [],
       selectedCohortId: null,
       activeTab: 'funnel',
+      currentProjectId: null,
 
       addStage: (name, isTerminal = false) => {
         const stage: Stage = { id: uuid(), name, isTerminal };
@@ -176,6 +190,78 @@ export const useStore = create<AppState>()(
 
       setSelectedCohortId: (id) => set({ selectedCohortId: id }),
       setActiveTab: (tab) => set({ activeTab: tab }),
+
+      // Supabase sync
+      setCurrentProjectId: (id) => set({ currentProjectId: id }),
+
+      loadFromSupabase: async (projectId: string) => {
+        if (!isSupabaseConfigured) return;
+
+        const { data, error } = await supabase
+          .from('project_data')
+          .select('*')
+          .eq('project_id', projectId)
+          .single();
+
+        if (error) {
+          // If no data exists yet, that's okay - project was just created
+          if (error.code !== 'PGRST116') {
+            console.error('Error loading project data:', error);
+          }
+          return;
+        }
+
+        if (data) {
+          set({
+            stages: data.stages || [],
+            edges: data.edges || [],
+            cohorts: data.cohorts || [],
+            opportunities: data.opportunities || [],
+            currentProjectId: projectId,
+          });
+        }
+      },
+
+      saveToSupabase: async (projectId: string) => {
+        if (!isSupabaseConfigured) return;
+
+        const { stages, edges, cohorts, opportunities } = get();
+
+        const { error } = await supabase
+          .from('project_data')
+          .upsert(
+            {
+              project_id: projectId,
+              stages,
+              edges,
+              cohorts,
+              opportunities,
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: 'project_id' }
+          );
+
+        if (error) {
+          console.error('Error saving project data:', error);
+          throw error;
+        }
+
+        // Also update project's updated_at
+        await supabase
+          .from('projects')
+          .update({ updated_at: new Date().toISOString() })
+          .eq('id', projectId);
+      },
+
+      loadSharedData: (data) => {
+        set({
+          stages: data.stages,
+          edges: data.edges,
+          cohorts: data.cohorts,
+          opportunities: data.opportunities,
+          currentProjectId: null,
+        });
+      },
     }),
     {
       name: 'projections-store',

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useStore } from '../store/useStore';
+import { useReadOnly } from '../contexts/ReadOnlyContext';
 import type { Opportunity, OpportunityMode } from '../types';
 
 function OpportunityForm({
@@ -237,6 +238,7 @@ export default function OpportunityPanel() {
   const updateOpportunity = useStore((s) => s.updateOpportunity);
   const removeOpportunity = useStore((s) => s.removeOpportunity);
   const toggleOpportunity = useStore((s) => s.toggleOpportunity);
+  const { isReadOnly } = useReadOnly();
 
   const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -283,15 +285,17 @@ export default function OpportunityPanel() {
         <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
           Opportunities
         </h3>
-        <button
-          onClick={() => { setAdding(!adding); setEditingId(null); }}
-          className="text-xs text-indigo-600 hover:text-indigo-800 font-medium"
-        >
-          {adding ? 'Cancel' : '+ Add'}
-        </button>
+        {!isReadOnly && (
+          <button
+            onClick={() => { setAdding(!adding); setEditingId(null); }}
+            className="text-xs text-indigo-600 hover:text-indigo-800 font-medium"
+          >
+            {adding ? 'Cancel' : '+ Add'}
+          </button>
+        )}
       </div>
 
-      {adding && (
+      {adding && !isReadOnly && (
         <OpportunityForm
           initial={{
             name: '',
@@ -311,7 +315,7 @@ export default function OpportunityPanel() {
 
       <div className="space-y-2">
         {opportunities.map((opp) =>
-          editingId === opp.id ? (
+          editingId === opp.id && !isReadOnly ? (
             <OpportunityForm
               key={opp.id}
               initial={formFromOpp(opp)}
@@ -330,12 +334,14 @@ export default function OpportunityPanel() {
             >
               <div className="flex items-start justify-between gap-2">
                 <label className="flex items-start gap-2 cursor-pointer flex-1">
-                  <input
-                    type="checkbox"
-                    checked={opp.enabled}
-                    onChange={() => toggleOpportunity(opp.id)}
-                    className="mt-0.5 accent-emerald-600"
-                  />
+                  {!isReadOnly && (
+                    <input
+                      type="checkbox"
+                      checked={opp.enabled}
+                      onChange={() => toggleOpportunity(opp.id)}
+                      className="mt-0.5 accent-emerald-600"
+                    />
+                  )}
                   <div>
                     <div className="font-medium text-slate-700 text-xs">
                       {opp.name}
@@ -347,20 +353,22 @@ export default function OpportunityPanel() {
                     </div>
                   </div>
                 </label>
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <button
-                    onClick={() => { setEditingId(opp.id); setAdding(false); }}
-                    className="text-indigo-500 hover:text-indigo-700 text-[10px]"
-                  >
-                    edit
-                  </button>
-                  <button
-                    onClick={() => removeOpportunity(opp.id)}
-                    className="text-red-400 hover:text-red-600 text-[10px]"
-                  >
-                    remove
-                  </button>
-                </div>
+                {!isReadOnly && (
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      onClick={() => { setEditingId(opp.id); setAdding(false); }}
+                      className="text-indigo-500 hover:text-indigo-700 text-[10px]"
+                    >
+                      edit
+                    </button>
+                    <button
+                      onClick={() => removeOpportunity(opp.id)}
+                      className="text-red-400 hover:text-red-600 text-[10px]"
+                    >
+                      remove
+                    </button>
+                  </div>
+                )}
               </div>
               <div className="flex gap-3 mt-1.5 text-[10px] text-slate-500">
                 {opp.mode === 'rate' ? (
@@ -369,6 +377,11 @@ export default function OpportunityPanel() {
                   <span>+{opp.absoluteCount.toLocaleString()} customers</span>
                 )}
                 <span>{Math.round(opp.likelihood * 100)}% likely</span>
+                {isReadOnly && (
+                  <span className={opp.enabled ? 'text-emerald-600' : 'text-slate-400'}>
+                    {opp.enabled ? 'Enabled' : 'Disabled'}
+                  </span>
+                )}
               </div>
               {opp.cohortIds.length > 0 && (
                 <div className="flex gap-1 mt-1">

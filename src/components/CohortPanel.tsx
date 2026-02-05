@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useStore } from '../store/useStore';
+import { useReadOnly } from '../contexts/ReadOnlyContext';
 import { totalEntryVolume } from '../types';
 
 export default function CohortPanel() {
@@ -9,6 +10,7 @@ export default function CohortPanel() {
   const removeCohort = useStore((s) => s.removeCohort);
   const selectedCohortId = useStore((s) => s.selectedCohortId);
   const setSelectedCohortId = useStore((s) => s.setSelectedCohortId);
+  const { isReadOnly } = useReadOnly();
 
   const [newName, setNewName] = useState('');
 
@@ -24,22 +26,24 @@ export default function CohortPanel() {
         Cohorts
       </h3>
 
-      {/* Add form */}
-      <div className="flex gap-1">
-        <input
-          value={newName}
-          onChange={(e) => setNewName(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
-          placeholder="New cohort..."
-          className="flex-1 border border-slate-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-400"
-        />
-        <button
-          onClick={handleAdd}
-          className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm px-3 py-1 rounded transition-colors"
-        >
-          Add
-        </button>
-      </div>
+      {/* Add form - hidden in read-only mode */}
+      {!isReadOnly && (
+        <div className="flex gap-1">
+          <input
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
+            placeholder="New cohort..."
+            className="flex-1 border border-slate-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-400"
+          />
+          <button
+            onClick={handleAdd}
+            className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm px-3 py-1 rounded transition-colors"
+          >
+            Add
+          </button>
+        </div>
+      )}
 
       {/* Cohort list */}
       <div className="space-y-2">
@@ -65,15 +69,17 @@ export default function CohortPanel() {
                   />
                   <span className="font-medium text-slate-700">{c.name}</span>
                 </div>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    removeCohort(c.id);
-                  }}
-                  className="text-red-400 hover:text-red-600 text-xs"
-                >
-                  remove
-                </button>
+                {!isReadOnly && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      removeCohort(c.id);
+                    }}
+                    className="text-red-400 hover:text-red-600 text-xs"
+                  >
+                    remove
+                  </button>
+                )}
               </div>
 
               <div className="mt-1 text-[11px] text-slate-500">

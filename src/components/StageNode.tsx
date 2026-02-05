@@ -1,6 +1,7 @@
 import { memo, useState } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import { useStore } from '../store/useStore';
+import { useReadOnly } from '../contexts/ReadOnlyContext';
 
 type VolumeInfo = { volume: number; pctOfEntry: number };
 type StageNodeData = {
@@ -18,6 +19,7 @@ function StageNode({ data }: NodeProps) {
   const selectedCohortId = useStore((s) => s.selectedCohortId);
   const setCohortEntry = useStore((s) => s.setCohortEntry);
   const removeCohortEntry = useStore((s) => s.removeCohortEntry);
+  const { isReadOnly } = useReadOnly();
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(label as string);
 
@@ -50,7 +52,7 @@ function StageNode({ data }: NodeProps) {
 
       {/* Header */}
       <div className="px-4 pt-3 pb-1 text-center">
-        {editing ? (
+        {editing && !isReadOnly ? (
           <input
             autoFocus
             value={name}
@@ -62,8 +64,8 @@ function StageNode({ data }: NodeProps) {
         ) : (
           <div className="flex items-center justify-center gap-2">
             <span
-              onDoubleClick={() => setEditing(true)}
-              className="font-semibold text-sm text-slate-800 cursor-text"
+              onDoubleClick={() => !isReadOnly && setEditing(true)}
+              className={`font-semibold text-sm text-slate-800 ${!isReadOnly ? 'cursor-text' : ''}`}
             >
               {label as string}
             </span>
@@ -104,25 +106,27 @@ function StageNode({ data }: NodeProps) {
           </div>
         )}
 
-        <div className="flex justify-center gap-1 mt-2">
-          <button
-            onClick={() => updateStage(sid, { isTerminal: !isTerminal })}
-            className="text-[10px] px-2 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-600"
-            title={isTerminal ? 'Unmark as paid' : 'Mark as paid'}
-          >
-            {isTerminal ? 'Unmark Paid' : 'Mark Paid'}
-          </button>
-          <button
-            onClick={() => removeStage(sid)}
-            className="text-[10px] px-2 py-0.5 rounded bg-red-50 hover:bg-red-100 text-red-600"
-          >
-            Delete
-          </button>
-        </div>
+        {!isReadOnly && (
+          <div className="flex justify-center gap-1 mt-2">
+            <button
+              onClick={() => updateStage(sid, { isTerminal: !isTerminal })}
+              className="text-[10px] px-2 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-600"
+              title={isTerminal ? 'Unmark as paid' : 'Mark as paid'}
+            >
+              {isTerminal ? 'Unmark Paid' : 'Mark Paid'}
+            </button>
+            <button
+              onClick={() => removeStage(sid)}
+              className="text-[10px] px-2 py-0.5 rounded bg-red-50 hover:bg-red-100 text-red-600"
+            >
+              Delete
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Entry points section */}
-      {(enteredCohorts.length > 0 || availableCohorts.length > 0) && (
+      {(enteredCohorts.length > 0 || (!isReadOnly && availableCohorts.length > 0)) && (
         <div className="border-t border-slate-200 mt-1 px-3 py-2 bg-slate-50/50 rounded-b-lg">
           <div className="text-[9px] text-slate-400 uppercase tracking-wider font-semibold mb-1">
             Entry Volume
@@ -137,27 +141,35 @@ function StageNode({ data }: NodeProps) {
               <span className="text-[10px] text-slate-500 truncate flex-1 text-left" title={c.name}>
                 {c.name}
               </span>
-              <input
-                type="text"
-                inputMode="numeric"
-                value={c.entries[sid]}
-                onChange={(e) => {
-                  const v = parseInt(e.target.value, 10);
-                  if (!isNaN(v)) setCohortEntry(c.id, sid, Math.max(0, v));
-                  else if (e.target.value === '') setCohortEntry(c.id, sid, 0);
-                }}
-                className="w-16 text-right border rounded px-1 py-0.5 text-[10px] outline-none focus:ring-1 focus:ring-indigo-300"
-              />
-              <button
-                onClick={() => removeCohortEntry(c.id, sid)}
-                className="text-red-400 hover:text-red-600 text-[10px] leading-none"
-                title="Remove entry"
-              >
-                x
-              </button>
+              {isReadOnly ? (
+                <span className="text-[10px] text-slate-700 font-mono">
+                  {c.entries[sid].toLocaleString()}
+                </span>
+              ) : (
+                <>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={c.entries[sid]}
+                    onChange={(e) => {
+                      const v = parseInt(e.target.value, 10);
+                      if (!isNaN(v)) setCohortEntry(c.id, sid, Math.max(0, v));
+                      else if (e.target.value === '') setCohortEntry(c.id, sid, 0);
+                    }}
+                    className="w-16 text-right border rounded px-1 py-0.5 text-[10px] outline-none focus:ring-1 focus:ring-indigo-300"
+                  />
+                  <button
+                    onClick={() => removeCohortEntry(c.id, sid)}
+                    className="text-red-400 hover:text-red-600 text-[10px] leading-none"
+                    title="Remove entry"
+                  >
+                    x
+                  </button>
+                </>
+              )}
             </div>
           ))}
-          {availableCohorts.length > 0 && (
+          {!isReadOnly && availableCohorts.length > 0 && (
             <select
               value=""
               onChange={(e) => {

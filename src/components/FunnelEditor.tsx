@@ -11,6 +11,7 @@ import {
   type Edge,
 } from '@xyflow/react';
 import { useStore } from '../store/useStore';
+import { useReadOnly } from '../contexts/ReadOnlyContext';
 import { computeStageVolumes } from '../lib/projections';
 import { totalEntryVolume } from '../types';
 import StageNode from './StageNode';
@@ -27,6 +28,7 @@ export default function FunnelEditor() {
   const addStage = useStore((s) => s.addStage);
   const addEdge = useStore((s) => s.addEdge);
   const updateStage = useStore((s) => s.updateStage);
+  const { isReadOnly } = useReadOnly();
 
   // Compute volumes per cohort per stage
   const stageVolumes = useMemo(() => {
@@ -64,8 +66,9 @@ export default function FunnelEditor() {
           stageId: s.id,
           volumes: stageVolumes[s.id] ?? {},
         },
+        draggable: !isReadOnly,
       })),
-    [stages, stageVolumes],
+    [stages, stageVolumes, isReadOnly],
   );
 
   // Convert store edges to React Flow edges
@@ -95,6 +98,7 @@ export default function FunnelEditor() {
 
   const onConnect = useCallback(
     (params: Connection) => {
+      if (isReadOnly) return;
       if (!params.source || !params.target) return;
       const newEdge = addEdge(params.source, params.target);
       if (newEdge) {
@@ -111,42 +115,49 @@ export default function FunnelEditor() {
         );
       }
     },
-    [addEdge, setEdges],
+    [addEdge, setEdges, isReadOnly],
   );
 
   const onNodeDragStop = useCallback(
     (_: unknown, node: Node) => {
+      if (isReadOnly) return;
       updateStage(node.id, { position: node.position } as never);
     },
-    [updateStage],
+    [updateStage, isReadOnly],
   );
 
   const handleAddStage = () => {
+    if (isReadOnly) return;
     const name = prompt('Stage name:');
     if (name?.trim()) addStage(name.trim());
   };
 
   return (
     <div className="h-full w-full relative">
-      <div className="absolute top-3 left-3 z-10">
-        <button
-          onClick={handleAddStage}
-          className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium px-4 py-2 rounded-lg shadow-sm transition-colors"
-        >
-          + Add Stage
-        </button>
-      </div>
+      {!isReadOnly && (
+        <div className="absolute top-3 left-3 z-10">
+          <button
+            onClick={handleAddStage}
+            className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium px-4 py-2 rounded-lg shadow-sm transition-colors"
+          >
+            + Add Stage
+          </button>
+        </div>
+      )}
       <ReactFlow
         nodes={nodes}
         edges={edges}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
-        onConnect={onConnect}
-        onNodeDragStop={onNodeDragStop}
+        onNodesChange={isReadOnly ? undefined : onNodesChange}
+        onEdgesChange={isReadOnly ? undefined : onEdgesChange}
+        onConnect={isReadOnly ? undefined : onConnect}
+        onNodeDragStop={isReadOnly ? undefined : onNodeDragStop}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         fitView
-        deleteKeyCode={null}
+        deleteKeyCode={isReadOnly ? null : 'Backspace'}
+        nodesDraggable={!isReadOnly}
+        nodesConnectable={!isReadOnly}
+        elementsSelectable={!isReadOnly}
         className="bg-slate-50"
       >
         <Background />
